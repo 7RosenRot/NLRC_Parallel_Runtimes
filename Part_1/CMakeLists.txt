@@ -10,16 +10,10 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(Headers
   workspace/include/counter.hpp
 )
-set(Sources
-  workspace/source/counter.cpp
-)
 
-add_library(${This} STATIC
-  ${Headers}
-  ${Sources}
-)
+add_library(${This} INTERFACE)
 
-target_include_directories(${This} PUBLIC
+target_include_directories(${This} INTERFACE
   workspace/include
 )
 

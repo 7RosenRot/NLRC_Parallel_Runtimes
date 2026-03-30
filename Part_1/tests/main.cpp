@@ -7,30 +7,23 @@
 
 #include <counter.hpp>
 
-TEST(CounterTest, RaceCondition) {
-  std::atomic<uint32_t> low{0xFFFFFFFF};
-  std::atomic<uint32_t> high{0};
-  counter obj_counter(low, high);
+TEST(CounterTest, Multithread) {
+  const int num_threads = 8;
+  const int increment_per_thread = 100000;
+  const int total = num_threads * increment_per_thread;
   
-  const int threadCount = 8;
-  const int increments_per_thread = 100000;
-  
-  std::vector<uint64_t> results(threadCount * increments_per_thread);
-  
-  std::atomic<bool> start_signal{false};
+  std::atomic<std::uint32_t> low{0x7FFFFFFF};
+  std::atomic<std::uint32_t> high{0};
 
-  std::vector<std::jthread> threads;
-  threads.reserve(threadCount);
+  std::vector<std::uint64_t> results(total);
 
   {
-    for (size_t i = 0; i < threadCount; i += 1) {
-      auto increment = [&, i]() {
-        while (!start_signal) {
-          std::this_thread::yield();
-        }
+    std::vector<std::jthread> threads;
 
-        for (int j = 0; j < increments_per_thread; ++j) {
-          results[i * increments_per_thread + j] = obj_counter.fetch_add();
+    for (size_t i = 0; i < num_threads; i += 1) {
+      auto increment = [&, i]() {
+        for (size_t j = 0; j < increment_per_thread; j += 1) {
+          results[i * increment_per_thread + j] = fetch_add(low, high);
         }
       };
 
@@ -38,13 +31,9 @@ TEST(CounterTest, RaceCondition) {
     }
   }
 
-  start_signal = true;
-
-  threads.clear();
-  
   std::sort(results.begin(), results.end());
 
-  for (size_t i = 1; i < results.size(); i += 1) {
+  for (size_t i = 1; i < total; i += 1) {
     ASSERT_EQ(results[i], results[i - 1] + 1);
   }
 }
