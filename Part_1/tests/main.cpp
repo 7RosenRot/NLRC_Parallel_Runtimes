@@ -23,7 +23,7 @@ TEST(CounterTest, Multithread) {
     for (size_t i = 0; i < num_threads; i += 1) {
       auto increment = [&, i]() {
         for (size_t j = 0; j < increment_per_thread; j += 1) {
-          results[i * increment_per_thread + j] = fetch_add(low, high);
+          results[i * increment_per_thread + j] = mac::fetch_add(low, high);
         }
       };
 

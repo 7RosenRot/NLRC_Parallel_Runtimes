@@ -3,6 +3,8 @@
 #include <atomic>
 #include <cstdint>
 
+namespace mac {
+
 inline std::uint64_t fetch_add(std::atomic<std::uint32_t>& low, std::atomic<std::uint32_t>& high) noexcept {
   std::uint32_t crt_high = high.load(std::memory_order_acquire);
   std::uint32_t old_low = low.fetch_add(1U, std::memory_order_acq_rel);
@@ -17,3 +19,5 @@ inline std::uint64_t fetch_add(std::atomic<std::uint32_t>& low, std::atomic<std:
 
   return static_cast<std::uint64_t>(crt_high) << 31 | static_cast<std::uint64_t>(old_low & 0x7FFFFFFF);
 }
+
+}  // mac - my atomic counter
