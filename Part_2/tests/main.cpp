@@ -7,35 +7,30 @@
 
 #include <counter.hpp>
 
-TEST(CounterTest, RaceCondition) {
-  std::atomic<uint16_t> value_1{0};
-  std::atomic<uint16_t> value_2{0};
-  std::atomic<uint32_t> value_3{0};
-  counter obj_counter(value_1, value_2, value_3);
+TEST(CounterTest, Multithread) {
+  const int num_threads = 8;
+  const int increment_per_thread = 100000;
+  const int total = num_threads * increment_per_thread;
   
-  uint64_t start_val = 0x00FEFFFE;
-  obj_counter.reset(start_val);
+  std::atomic<std::uint16_t> segment_1{0};
+  std::atomic<std::uint8_t>  segment_2{0};
+  std::atomic<std::uint16_t> segment_3{0};
+  std::atomic<std::uint8_t>  segment_4{0};
+  std::atomic<std::uint16_t> segment_5{0};
+  
+  mac::counter obj_counter(segment_1, segment_2, segment_3, segment_4, segment_5);
 
-  const int threadCount = 8;
-  const int increments_per_thread = 10000;
+  obj_counter.reset(0x00FEFFFE);
 
-  const int total_increments = threadCount * increments_per_thread;
-  std::vector<uint64_t> results(total_increments);
-  
-  std::atomic<bool> start_signal{false};
-  
-  std::vector<std::jthread> threads;
-  threads.reserve(threadCount);
+  std::vector<std::uint64_t> results(total);
 
   {
-    for (int i = 0; i < threadCount; ++i) {
-      auto increment = [&, i]() {
-        while (!start_signal) {
-          std::this_thread::yield();
-        }
+    std::vector<std::jthread> threads(num_threads);
 
-        for (int j = 0; j < increments_per_thread; ++j) {
-          results[i * increments_per_thread + j] = obj_counter.fetch_add();
+    for (size_t i = 0; i < num_threads; i += 1) {
+      auto increment = [&, i]() {
+        for (size_t j = 0; j < increment_per_thread; j += 1) {
+          results[i * increment_per_thread + j] = obj_counter.fetch_add();
         }
       };
 
@@ -43,12 +38,9 @@ TEST(CounterTest, RaceCondition) {
     }
   }
 
-  start_signal.store(true);
-  
-  threads.clear();
-
   std::sort(results.begin(), results.end());
 
-  ASSERT_EQ(results[0], start_val);
-  ASSERT_EQ(results.back() + 1, start_val + total_increments);
+  for (size_t i = 1; i < total; i += 1) {
+    ASSERT_EQ(results[i], results[i - 1] + 1);
+  }
 }

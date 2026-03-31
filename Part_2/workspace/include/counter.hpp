@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <type_traits>
 
 namespace mac {
 
@@ -10,10 +11,18 @@ class counter;
 
 template<typename T>
 class counter<T> {
+  static_assert(std::is_unsigned_v<T> && std::_Is_nonbool_integral<T>, "expected uint type");
+
  private:
   std::atomic<T>& value_;
 
  public:
+  static constexpr std::uint64_t size_ = sizeof(T) * 8;
+  static_assert(size_ <= 64, "expected less/equal to 64 bits");
+  
+  static constexpr std::uint64_t minValue = 0;
+  static constexpr std::uint64_t maxValue = (size_ >= 64) ? ~0ULL : (1ULL << size_) - 1;
+ 
   counter(std::atomic<T>& value) : value_(value) {}
 
   std::uint64_t fetch_add() noexcept {
@@ -35,6 +44,8 @@ class counter<T> {
 
 template<typename Low, typename... High>
 class counter<Low, High...> {
+  static_assert(std::is_unsigned_v<Low> && std::_Is_nonbool_integral<Low>, "expected uint type");
+
  private:
   std::atomic<Low>& low_;
   counter<High...> high_;
@@ -43,6 +54,12 @@ class counter<Low, High...> {
   static constexpr std::uint64_t mask_ = (1ULL << shift_) - 1;
 
  public:
+  static constexpr std::uint64_t size_ = sizeof(Low) * 8 + counter<High...>::size_ - 1;
+  static_assert(size_ <= 64, "expected less/equal to 64 bits");
+  
+  static constexpr std::uint64_t minValue = 0;
+  static constexpr std::uint64_t maxValue = (size_ >= 64) ? ~0ULL : (1ULL << size_) - 1;
+
   counter(std::atomic<Low>& low, std::atomic<High>&... high) : low_(low), high_(high...) {}
 
   std::uint64_t fetch_add() noexcept {

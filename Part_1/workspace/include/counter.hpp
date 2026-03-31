@@ -15,7 +15,7 @@ inline std::uint64_t fetch_add(std::atomic<std::uint32_t>& low, std::atomic<std:
     high.fetch_add(1U, std::memory_order_acquire);
   }
 
-  crt_high = crt_high + ((old_low >> 31) - (crt_high & 1U));
+  crt_high = crt_high + ((old_low >> 31) - (crt_high & 1ULL));
 
   return static_cast<std::uint64_t>(crt_high) << 31 | static_cast<std::uint64_t>(old_low & 0x7FFFFFFF);
 }
