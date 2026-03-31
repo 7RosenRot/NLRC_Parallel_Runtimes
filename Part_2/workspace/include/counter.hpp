@@ -1,98 +1,93 @@
 #pragma once
 
-#include <cstdint>
 #include <atomic>
-#include <tuple>
-#include <limits>
+#include <cstdint>
 
-template <typename... Args>
-class counter {
+namespace mac {
+
+template<typename... Ts>
+class counter;
+
+template<typename T>
+class counter<T> {
  private:
-  std::tuple<std::atomic<Args>&...> parts_;
-
-  uint64_t recursive_read(uint64_t) const { return 0; }
-
-  template <typename T, typename... Other>
-  uint64_t recursive_read(uint64_t shift, std::atomic<T>& current, std::atomic<Other>&... other) const {
-    uint64_t val = current.load(std::memory_order_acquire);
-    
-    uint64_t result = (static_cast<uint64_t>(val) << shift) | recursive_read(shift + sizeof(T) * 8, other...);
-    
-    return result;
-  }
-
-  void recursive_propagate() {}
-
-  template <typename T, typename... Other>
-  void recursive_propagate(std::atomic<T>& current, std::atomic<Other>&... other) {
-    T prev = current.fetch_add(1, std::memory_order_acq_rel);
-
-    if (prev == std::numeric_limits<T>::max()) {
-      recursive_propagate(other...);
-    }
-  }
-
-  void recursive_reset(uint64_t, uint64_t) {}
-
-  template <typename T, typename... Other>
-  void recursive_reset(uint64_t value, uint64_t shift, std::atomic<T>& current, std::atomic<Other>&... other) {
-    current.store(static_cast<T>(value >> shift), std::memory_order_release);
-    
-    recursive_reset(value, shift + sizeof(T) * 8, other...);
-  }
-
-  uint64_t snapshot() const {
-    while (true) {
-      auto read_ref = [this](auto&... args) {
-        return this->recursive_read(0, args...);
-      };
-
-      uint64_t value = std::apply(read_ref, parts_);
-      uint64_t check = std::apply(read_ref, parts_);
-
-      if (value == check) {
-        return value;
-      }
-    }
-  }
+  std::atomic<T>& value_;
 
  public:
-  static constexpr uint64_t total_bits = (0 + ... + (sizeof(Args) * 8));
-  static constexpr uint64_t minValue = 0;
-  static constexpr uint64_t maxValue = (total_bits >= 64) ? 0xFFFFFFFFFFFFFFFFULL : (1ULL << total_bits) - 1;
+  counter(std::atomic<T>& value) : value_(value) {}
 
-  counter(std::atomic<Args>&... args) : parts_(args...) {}
-
-  void reset(uint64_t newValue = 0) {
-    auto reset_ref = [this, newValue](auto&... args) {
-      this->recursive_reset(newValue, 0, args...);
-    };
-    
-    std::apply(reset_ref, parts_);
+  std::uint64_t fetch_add() noexcept {
+    return value_.fetch_add(1U, std::memory_order_acq_rel);
   }
 
-  uint64_t fetch_add() {
-    while (true) {
-      uint64_t crt_value = snapshot();
-      
-      auto& low_atomic = std::get<0>(parts_);
-      using type = std::remove_reference_t<decltype(low_atomic.load())>;
-      
-      type crt_low = static_cast<type>(crt_value);
-      type upd_low = crt_low + 1;
+  void add() noexcept {
+    value_.fetch_add(1U, std::memory_order_acq_rel);
+  }
 
-      auto propagate_ref = [this](auto& first, auto&... other) { 
-        (void)first;
-        this->recursive_propagate(other...); 
-      };
-      
-      if (low_atomic.compare_exchange_weak(crt_low, upd_low, std::memory_order_acq_rel)) {
-        if (upd_low == 0) {
-          std::apply(propagate_ref, parts_);
-        }
-        
-        return crt_value;
-      }
-    }
+  std::uint64_t load() const noexcept {
+    return value_.load(std::memory_order_acquire);
+  }
+
+  void reset(const std::uint64_t value = 0) noexcept {
+    value_.store(value, std::memory_order_release);
   }
 };
+
+template<typename Low, typename... High>
+class counter<Low, High...> {
+ private:
+  std::atomic<Low>& low_;
+  counter<High...> high_;
+  
+  static constexpr std::uint64_t shift_ = sizeof(Low) * 8 - 1;
+  static constexpr std::uint64_t mask_ = (1ULL << shift_) - 1;
+
+ public:
+  counter(std::atomic<Low>& low, std::atomic<High>&... high) : low_(low), high_(high...) {}
+
+  std::uint64_t fetch_add() noexcept {
+    std::uint64_t crt_high = high_.load();
+    Low old_low = low_.fetch_add(1U, std::memory_order_acq_rel);
+
+    Low crt_low = old_low + 1U;
+
+    if (old_low >> shift_ != crt_low >> shift_) {
+      high_.add();
+    }
+
+    crt_high = crt_high + ((old_low >> shift_) != (crt_high & 1ULL));
+
+    return (crt_high << shift_) | (old_low & mask_);
+  }
+
+  void add() noexcept {
+    Low old_low = low_.fetch_add(1U, std::memory_order_acq_rel);
+    Low crt_low = old_low + 1U;
+
+    if (old_low >> shift_ != crt_low >> shift_) {
+      high_.add();
+    }
+  }
+
+  std::uint64_t load() const noexcept {
+    std::uint64_t crt_high = high_.load();
+    Low old_low = low_.load(std::memory_order_acquire);
+
+    crt_high = crt_high + ((old_low >> shift_) != (crt_high & 1ULL));
+
+    return (crt_high << shift_) | (old_low & mask_);
+  }
+
+  void reset(const std::uint64_t value = 0) noexcept {
+    std::uint64_t high = value >> shift_;
+    Low low = static_cast<Low>((value & mask_) | ((high & 1ULL) << shift_));
+
+    low_.store(low, std::memory_order_release);
+    high_.reset(high);
+  }
+};
+
+template<typename... Ts>
+counter(std::atomic<Ts>&...) -> counter<Ts...>;
+
+}  // mac - my atomic counter
