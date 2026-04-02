@@ -22,5 +22,5 @@ build/tests/Release/Part_<1/2>Tests.exe
 
 ### Немного от себя
 Очень интересное задание, мне понравилось. Буду рад обратной связи!
-- Telegram: t.me/Shemetov_Daniil
+- Telegram: [Shemetov_Daniil](https://t.me/Shemetov_Daniil)
 - mail: lego.den.2005@mail.ru
